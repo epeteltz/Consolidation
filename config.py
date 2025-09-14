@@ -1,36 +1,48 @@
-# This file contains the configuration for different bank and credit card formats.
-# To add a new format, simply create a new entry in the 'file_formats' dictionary.
-
-# The format maps define how to convert column names from a bank's CSV file
-# to the standardized names used by the script.
-
-# Master file columns are:
-# Transaction Date; Transaction Account; Transaction Description; Currency; Credit/Debit; Category; Subcategory; Note; Year; Month; Day; Transaction Date2
+# This file contains the configuration for different bank and credit card file formats.
+# The keys of the file_formats dictionary should be the unique file prefixes.
 
 file_formats = {
-    # --- Configuration for Format A ---
-    # This format is identified by the file prefix '19988560'.
-    '19988560': {
-        'format_map': {
-            'Transaction Date': 'transaction_date',
-            'Transaction Description': 'transaction_description',
-            'Account Number': 'account_number',
-            'Debit Amount': 'debit_amount',
-            'Credit Amount': 'credit_amount',
-        },
-        'currency': 'GBP',
-        'account_type': 'Current Account',
-    },
-    
-    # --- Configuration for Format B ---
-    # This format is identified by the file prefix '1231'.
     '1231': {
         'format_map': {
             'Transaction Date': 'transaction_date',
             'Transaction Description': 'transaction_description',
-            'Transaction Amount': 'original_amount',
+            'Transaction Amount': 'original_amount'
         },
         'currency': 'GBP',
         'account_type': 'Credit Card',
+        'header_row': 1,
     },
+    '19988560': {
+        'format_map': {
+            'Date': 'transaction_date',
+            'Narrative': 'transaction_description',
+            'Amount': 'original_amount'
+        },
+        'currency': 'GBP',
+        'account_type': 'current account',
+        'header_row': 1,
+    },
+    'עובר ושב': {
+        'format_map': {
+            'תאריך': 'transaction_date',
+            'תיאור התנועה': 'transaction_description',
+            '₪ זכות/חובה ': 'original_amount'
+        },
+        'currency': 'ILS',
+        'account_type': 'current account',
+        'header_row': 8,
+        'account_number': 1920022824
+    },
+    'פירוט חיובים לכרטיס מאסטרקארד': {
+        'format_map': {
+            'תאריך עסקה': 'transaction_date',
+            'שם בית עסק': 'transaction_description',
+            'סכום חיוב': 'original_amount',
+            'סוג עסקה': 'transaction_type',
+            'הערות': 'Note',
+        },
+        'currency': 'ILS',
+        'account_type': 'Credit Card',
+        'header_row': 5
+    }
 }
