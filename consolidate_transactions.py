@@ -9,7 +9,7 @@ from config import file_formats
 
 
 # --- Main processing function ---
-def process_transactions(file_path: str, format_map: Dict[str, str], currency: str, account_type: str) -> pd.DataFrame:
+def process_transactions(file_path: str, format_map: Dict[str, str], currency: str, account_type: str, account_number_prefix: str) -> pd.DataFrame:
     """
     Reads a CSV file, processes transactions, and returns a pandas DataFrame
     with the standardized structure.
@@ -20,6 +20,7 @@ def process_transactions(file_path: str, format_map: Dict[str, str], currency: s
                                      to the standardized column names.
         currency (str): The default currency of the account (e.g., 'EUR', 'USD').
         account_type (str): The type of account (e.g., 'Current Account', 'Credit Card').
+        account_number_prefix (str): The account number to use, which is derived from the file name.
 
     Returns:
         pd.DataFrame: A DataFrame containing the standardized transaction data.
@@ -56,15 +57,16 @@ def process_transactions(file_path: str, format_map: Dict[str, str], currency: s
     df['transaction_date'] = pd.to_datetime(df['transaction_date'], dayfirst=True)
 
     # Create new columns to match the desired master structure
-    df['Transaction Account'] = df['account_number']
-    df['Credit/Debit'] = df['original_amount'].apply(lambda x: 'Credit' if x >= 0 else 'Debit')
+    df['Transaction Account'] = account_number_prefix
+    # Corrected logic: The 'Credit/Debit' column now contains the numeric value of the transaction.
+    df['Credit/Debit'] = df['original_amount']
     df['Category'] = ''
     df['Subcategory'] = ''
     df['Note'] = ''
-    df['Year'] = ''
-    df['Month'] = ''
-    df['Day'] = ''
-    df['Transaction Date2'] = ''
+    df['Year'] = df['transaction_date'].dt.year.astype('Int64')
+    df['Month'] = df['transaction_date'].dt.month.astype('Int64')
+    df['Day'] = df['transaction_date'].dt.day.astype('Int64')
+    df['Transaction Date2'] = df['transaction_date']
     df['Currency'] = currency
 
     # Reformat the original transaction date to a string in the desired format
@@ -95,11 +97,11 @@ def process_transactions(file_path: str, format_map: Dict[str, str], currency: s
 
 def consolidate_data(input_file_paths: List[str], output_file: str):
     """
-    Consolidates transactions from a list of files and saves them to a master CSV file.
+    Consolidates transactions from a list of files and saves them to a master Excel file.
 
     Args:
         input_file_paths (List[str]): A list of file paths to process.
-        output_file (str): The path to the output master CSV file.
+        output_file (str): The path to the output master Excel file.
     """
     all_dfs = []
     
@@ -117,40 +119,88 @@ def consolidate_data(input_file_paths: List[str], output_file: str):
             account_type = format_info['account_type']
 
             print(f"Processing '{file_path}' using format '{prefix}'...")
-            df = process_transactions(file_path, format_map, currency, account_type)
+            df = process_transactions(file_path, format_map, currency, account_type, prefix)
             if not df.empty:
                 all_dfs.append(df)
         else:
             print(f"Error: No configuration found for file prefix '{prefix}'. Skipping '{file_path}'.")
 
     if all_dfs:
-        # Concatenate all DataFrames into one
-        consolidated_df = pd.concat(all_dfs, ignore_index=True)
-        consolidated_df.to_csv(output_file, index=False)
-        print(f"\nSuccessfully consolidated transactions to '{output_file}'!")
+        final_df = pd.DataFrame()
+        seen_keys = set()
+        initial_total_rows = 0
+
+        # Process each DataFrame for deduplication
+        for df in all_dfs:
+            initial_total_rows += len(df)
+            df['temp_key'] = df.apply(lambda row: (row['Transaction Date'], row['Transaction Account'], row['Transaction Description'], row['Credit/Debit']), axis=1)
+
+            # Find rows that are not in the consolidated dataframe yet
+            new_transactions = df[~df['temp_key'].isin(seen_keys)]
+            
+            # Add the keys of the new transactions to our set
+            seen_keys.update(new_transactions['temp_key'])
+            
+            final_df = pd.concat([final_df, new_transactions.drop(columns='temp_key')], ignore_index=True)
+        
+        final_count = len(final_df)
+        if initial_total_rows > final_count:
+            print(f"\nRemoved {initial_total_rows - final_count} duplicate transactions across different files.")
+
+        # Use ExcelWriter to set custom column formats
+        try:
+            writer = pd.ExcelWriter(output_file, engine='xlsxwriter', datetime_format='YYYY-MM-DD')
+            final_df.to_excel(writer, index=False, sheet_name='Transactions')
+
+            # Get the workbook and worksheet objects
+            workbook = writer.book
+            worksheet = writer.sheets['Transactions']
+
+            # Define the number format for currency
+            currency_format = workbook.add_format({'num_format': '0.00'})
+            
+            # Find the column index for 'Credit/Debit'
+            col_names = final_df.columns.values.tolist()
+            try:
+                credit_debit_col_idx = col_names.index('Credit/Debit')
+                # Set the column format
+                worksheet.set_column(credit_debit_col_idx, credit_debit_col_idx, None, currency_format)
+            except ValueError:
+                print("Warning: 'Credit/Debit' column not found, could not apply number format.")
+            
+            # Autofit all columns
+            for i, col in enumerate(final_df.columns):
+                max_len = max(final_df[col].astype(str).map(len).max(), len(col))
+                worksheet.set_column(i, i, max_len + 2) # Adding a small buffer
+
+            # Close the writer to save the file
+            writer.close()
+            
+            print(f"\nSuccessfully consolidated transactions to '{output_file}'!")
+
+        except ImportError:
+            print("Error: The 'openpyxl' library is required to write to Excel files.")
+            print("Please install it by running: pip install openpyxl")
+            print("Falling back to saving as CSV.")
+            final_df.to_csv('master_transactions.csv', index=False)
+            print(f"Successfully consolidated transactions to 'master_transactions.csv' instead.")
+
     else:
         print("\nNo transactions were processed. The output file was not created.")
 
 
 if __name__ == '__main__':
     # --- Example Usage ---
-    # Define a list of input file paths to process.
-    # The script will automatically look up the correct format based on the file name prefix.
-    
-    # Create dummy CSV files for demonstration purposes
-    dummy_bank_A_data = """Transaction Date,Transaction Type,Sort Code,Account Number,Transaction Description,Debit Amount,Credit Amount,Balance
-01/09/2025,FPI,'30-80-88,19988560,CLM LTD,,3102.15,5938.02
-01/09/2025,DD,'30-80-88,19988560,AJ BELL SECURITIES,250.00,,2835.87
-01/09/2025,DD,'30-80-88,19988560,AJ BELL SECURITIES,250.00,,3085.87
-01/09/2025,DD,'30-80-88,19988560,LLOYDS CASHBACK,69.98,,3335.87
-15/08/2025,DD,'30-80-88,19988560,SANTANDER MORTGAGE,2349.54,,3405.85
-"""
-    with open('19988560_20252204_0309.csv', 'w') as f:
-        f.write(dummy_bank_A_data)
+    # Find all CSV files in the current directory that have a configured prefix
+    input_files = []
+    for filename in os.listdir('.'):
+        if filename.endswith('.csv'):
+            prefix = filename.split('_')[0]
+            if prefix in file_formats:
+                input_files.append(filename)
 
-    input_files = [
-        '19988560_20252204_0309.csv',
-    ]
-
-    # Run the consolidation process
-    consolidate_data(input_files, 'master_transactions.csv')
+    if not input_files:
+        print("No CSV files found with a configured prefix. Please ensure your files are in the same directory.")
+    else:
+        # Run the consolidation process
+        consolidate_data(input_files, 'master_transactions.xlsx')

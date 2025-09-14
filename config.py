@@ -21,16 +21,16 @@ file_formats = {
         'currency': 'GBP',
         'account_type': 'Current Account',
     },
-
-    # --- Placeholder for another format (e.g., Credit Card) ---
-    # 'credit_card_format': {
-    #     'format_map': {
-    #         'Trans Date': 'transaction_date',
-    #         'Details': 'transaction_description',
-    #         'Transaction Amount': 'original_amount',
-    #         'Currency': 'currency',
-    #     },
-    #     'currency': 'USD',
-    #     'account_type': 'Credit Card',
-    # },
+    
+    # --- Configuration for Format B ---
+    # This format is identified by the file prefix '1231'.
+    '1231': {
+        'format_map': {
+            'Transaction Date': 'transaction_date',
+            'Transaction Description': 'transaction_description',
+            'Transaction Amount': 'original_amount',
+        },
+        'currency': 'GBP',
+        'account_type': 'Credit Card',
+    },
 }
